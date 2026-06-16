@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>PDF Editor Pro</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #1e1e1e;
+  color: white;
+}
+
+.toolbar {
+  background: #111;
+  padding: 10px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#viewer {
+  position: relative;
+  padding: 20px;
+}
+
+canvas {
+  display: block;
+  margin-bottom: 20px;
+  background: white;
+}
+
+.text-layer {
+  position: absolute;
+  border: 1px dashed #00aaff;
+  min-width: 100px;
+  min-height: 30px;
+  background: rgba(255,255,255,0.8);
+  color: black;
+  padding: 5px;
+  cursor: move;
+}
+</style>
+</head>
+
+<body>
+
+<div class="toolbar">
+  <input type="file" id="file" accept="application/pdf">
+  <button id="addText">Texto</button>
+  <button id="save">Guardar</button>
+</div>
+
+<div id="viewer"></div>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- PDF-lib -->
+<script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+
+<script>
+const viewer = document.getElementById('viewer');
+
+let pdfDoc = null;
+let pdfBytes = null;
+
+// CONFIG PDF.JS
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+document.getElementById('file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  pdfBytes = await file.arrayBuffer();
+
+  pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+
+  renderPDF();
+});
+
+async function renderPDF() {
+  viewer.innerHTML = '';
+
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const viewport = page.getViewport({ scale: 1.5 });
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    await page.render({
+      canvasContext: ctx,
+      viewport
+    }).promise;
+
+    viewer.appendChild(canvas);
+  }
+}
+
+// 🔥 AÑADIR TEXTO
+document.getElementById('addText').onclick = () => {
+  const div = document.createElement('div');
+
+  div.className = 'text-layer';
+  div.contentEditable = true;
+  div.innerText = "Escribe aquí";
+
+  div.style.left = "50px";
+  div.style.top = "50px";
+
+  viewer.appendChild(div);
+
+  drag(div);
+};
+
+// mover texto
+function drag(el) {
+  let isDown = false;
+  let offsetX, offsetY;
+
+  el.onmousedown = (e) => {
+    isDown = true;
+    offsetX = e.offsetX;
+    offsetY = e.offsetY;
+  };
+
+  document.onmousemove = (e) => {
+    if (!isDown) return;
+
+    const rect = viewer.getBoundingClientRect();
+
+    el.style.left = (e.clientX - rect.left - offsetX) + "px";
+    el.style.top = (e.clientY - rect.top - offsetY) + "px";
+    el.style.position = "absolute";
+  };
+
+  document.onmouseup = () => {
+    isDown = false;
+  };
+}
+
+// 💾 GUARDAR PDF
+document.getElementById('save').onclick = async () => {
+  if (!pdfBytes) return alert("Carga un PDF primero");
+
+  const pdfDocLib = await PDFLib.PDFDocument.load(pdfBytes);
+  const pages = pdfDocLib.getPages();
+
+  document.querySelectorAll('.text-layer').forEach(el => {
+    const page = pages[0];
+
+    const x = parseInt(el.style.left);
+    const y = page.getHeight() - parseInt(el.style.top);
+
+    page.drawText(el.innerText, {
+      x,
+      y,
+      size: 14
+    });
+  });
+
+  const newPdf = await pdfDocLib.save();
+
+  const blob = new Blob([newPdf], { type: "application/pdf" });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  a.href = url;
+  a.download = "editado.pdf";
+  a.click();
+};
+</script>
+
+</body>
+</html>
